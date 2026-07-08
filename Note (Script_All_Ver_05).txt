@@ -1,0 +1,14 @@
+Version: Script_All_Ver_05.pyw
+core_engine (Script_All_Ver_05)
+db_manager(Script_All_Ver_05)
+
+=====================================
+📌 Download   : Tải ảnh ở trang xchina
+👤 Tài Khoản     : Lưu tài khoản và Bookmark
+📅 Blogspot : Soạn post cho blogspot: Heo Xào Xả
+🖼️ Thư mục : Nén File, Đổi tên File, Tạo Tập Tin
+🔗 Tình Trạng     : Hoàn Thiện
+
+
+
+
