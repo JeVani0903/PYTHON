@@ -11,15 +11,6 @@ import os
 # =========================================================================
 st.set_page_config(page_title="E-Learning Creator V3", page_icon="🎓", layout="wide")
 
-# Custom CSS để làm đẹp giao diện Streamlit
-st.markdown("""
-<style>
-    .main-header { color: #1a73e8; font-weight: bold; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; margin-bottom: 20px; }
-    .stButton>button { border-radius: 8px; font-weight: bold; }
-    .item-box { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #e0e0e0; margin-bottom: 15px; }
-</style>
-""", unsafe_allow_html=True)
-
 DRIVE_REGEX = re.compile(r'(?:id=|/d/)([\w-]+)')
 
 def extract_gdrive_id(url):
@@ -73,7 +64,36 @@ def parse_audio(txt, sys_id):
     txt, img, aud = parse_media(txt, sys_id)
     return txt, aud
 
-# Crossword Logic
+# =========================================================================
+# THUẬT TOÁN TẠO LƯỚI Ô CHỮ
+# =========================================================================
+def check_connectivity(words_data):
+    n = len(words_data)
+    adj = {i: [] for i in range(n)}
+    for i in range(n):
+        for j in range(i + 1, n):
+            if set(words_data[i]['word']).intersection(set(words_data[j]['word'])):
+                adj[i].append(j)
+                adj[j].append(i)
+    all_nodes = set(range(n))
+    components = []
+    while all_nodes:
+        start = all_nodes.pop()
+        comp = {start}
+        q = [start]
+        while q:
+            curr = q.pop(0)
+            for neighbor in adj[curr]:
+                if neighbor in all_nodes:
+                    all_nodes.remove(neighbor)
+                    comp.add(neighbor)
+                    q.append(neighbor)
+        components.append(comp)
+    if len(components) > 1:
+        components.sort(key=len)
+        return [words_data[i]['word'] for i in components[0]]
+    return []
+
 def is_valid_placement(word, x, y, direction, grid):
     for i, char in enumerate(word):
         cx = x + i if direction == 'across' else x
@@ -135,35 +155,8 @@ def generate_crossword_layout(original_word_list):
             return placed, "Success"
     return None, "Vẫn không thể xếp được lưới sau 1000 lần thử. Vui lòng đổi/thêm/bớt từ khóa!"
 
-def check_connectivity(words_data):
-    n = len(words_data)
-    adj = {i: [] for i in range(n)}
-    for i in range(n):
-        for j in range(i + 1, n):
-            if set(words_data[i]['word']).intersection(set(words_data[j]['word'])):
-                adj[i].append(j)
-                adj[j].append(i)
-    all_nodes = set(range(n))
-    components = []
-    while all_nodes:
-        start = all_nodes.pop()
-        comp = {start}
-        q = [start]
-        while q:
-            curr = q.pop(0)
-            for neighbor in adj[curr]:
-                if neighbor in all_nodes:
-                    all_nodes.remove(neighbor)
-                    comp.add(neighbor)
-                    q.append(neighbor)
-        components.append(comp)
-    if len(components) > 1:
-        components.sort(key=len)
-        return [words_data[i]['word'] for i in components[0]]
-    return []
-
 # =========================================================================
-# QUẢN LÝ DỮ LIỆU
+# QUẢN LÝ DỮ LIỆU TỰ ĐỘNG
 # =========================================================================
 DATA_FILE = "v3_backup_data.json"
 
@@ -192,8 +185,8 @@ def init_session():
         st.session_state.config = data.get("config", {"cover": "", "timer": ""})
         st.session_state.lecture_data = data.get("lecture_data", [])
         st.session_state.quiz_data = data.get("quiz_data", [])
-        st.session_state.current_page = "Quiz"
-        st.session_state.edit_idx = None # FIX: Mặc định là None (Hiển thị Danh sách)
+        st.session_state.current_page = "Config"
+        st.session_state.edit_idx = None
         st.session_state.initialized = True
 
 def navigate(page, edit_idx=None):
@@ -202,7 +195,7 @@ def navigate(page, edit_idx=None):
     st.rerun()
 
 # =========================================================================
-# CODE GENERATOR (BẢO LƯU TOÀN BỘ TÍNH NĂNG VÀ CSS)
+# CODE GENERATOR
 # =========================================================================
 def generate_code_block():
     sys_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -264,7 +257,7 @@ def generate_code_block():
             a_url = optimize_url(blk.get('link', ''))
             if a_url: lec_html_parts.append(f'<div class="lecture-section"><h3 class="section-title">🎧 {title}</h3><div class="standalone-audio"><audio controls><source src="{a_url}" type="audio/mpeg"></audio></div></div>')
 
-    # 2. QUIZ
+    # QUIZ Processing
     quiz_html_parts, js_grading_parts, js_init_parts = [], [], []
     max_score = 0
     valid_quizzes = st.session_state.quiz_data
@@ -314,12 +307,9 @@ def generate_code_block():
                     b64_tts = base64.b64encode(tts_text.encode('utf-8')).decode('utf-8')
                     audio_btn = f'<button type="button" class="audio-icon-btn" onclick="speakTTSBase64_{sys_id}(\'{b64_tts}\')" style="margin: 0 0 0 10px; flex-shrink: 0; width: 35px; height: 35px; font-size: 16px;">🔊</button>'
                     display_txt = "" 
-                
                 if not display_txt and not opt_img_html and audio_btn:
                     display_txt = f"Đáp án {val}"
-                    
                 inner_content = f"{opt_img_html}<span class='opt-text' style='margin-left: 5px;'>{display_txt}</span>" if display_txt else opt_img_html
-                    
                 labels.append(f'<div style="display: flex; align-items: center; margin-bottom: 8px;">'
                               f'<label class="opt-label hover-yellow" id="label-q{idx}-{val}_{sys_id}" style="flex-grow: 1; margin: 0; display:flex; align-items:center;">'
                               f'<input type="radio" name="q{idx}_{sys_id}" value="{val}" style="margin-right:8px;"> '
@@ -414,14 +404,9 @@ def generate_code_block():
             </div>
             <script>
               const wb_{sys_id}_{idx} = {json_wb}; let up_{sys_id}_{idx}=[], curr_{sys_id}_{idx}=null, s_{sys_id}_{idx}=0, q_{sys_id}_{idx}=1;
-              
-              document.getElementById("scramble-guess-{sys_id}-{idx}").addEventListener("keydown", function(e) {{
-                  if (e.key === "Enter") {{ e.preventDefault(); e.stopPropagation(); checkScramble_{sys_id}_{idx}(); }}
-              }});
-
+              document.getElementById("scramble-guess-{sys_id}-{idx}").addEventListener("keydown", function(e) {{ if (e.key === "Enter") {{ e.preventDefault(); e.stopPropagation(); checkScramble_{sys_id}_{idx}(); }} }});
               function shuf_{sys_id}_{idx}(w) {{ let a=w.split(''); for(let i=a.length-1;i>0;i--) {{let j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];}} return a.join(''); }}
               function startScramble_{sys_id}_{idx}() {{ up_{sys_id}_{idx}=[...wb_{sys_id}_{idx}]; s_{sys_id}_{idx}=0; q_{sys_id}_{idx}=1; document.getElementById("scramble-score-{sys_id}-{idx}").innerText=s_{sys_id}_{idx}; document.getElementById("scramble-play-{sys_id}-{idx}").style.display="block"; document.getElementById("scramble-result-{sys_id}-{idx}").style.display="none"; nextScramble_{sys_id}_{idx}(); }}
-              
               function nextScramble_{sys_id}_{idx}() {{
                 if(up_{sys_id}_{idx}.length===0){{ return; }}
                 document.getElementById("scramble-count-{sys_id}-{idx}").innerText=q_{sys_id}_{idx}+"/"+wb_{sys_id}_{idx}.length;
@@ -430,7 +415,6 @@ def generate_code_block():
                 document.getElementById("scramble-hint-{sys_id}-{idx}").innerText="Gợi ý: "+curr_{sys_id}_{idx}.hint;
                 let inp = document.getElementById("scramble-guess-{sys_id}-{idx}"); inp.value=""; inp.disabled=false; inp.focus(); document.getElementById("scramble-msg-{sys_id}-{idx}").innerText="";
               }}
-
               function checkScramble_{sys_id}_{idx}() {{
                 let inp = document.getElementById("scramble-guess-{sys_id}-{idx}");
                 let v = inp.value.toUpperCase().trim(); let m = document.getElementById("scramble-msg-{sys_id}-{idx}");
@@ -1258,23 +1242,48 @@ def generate_code_block():
 # GIAO DIỆN STREAMLIT CHÍNH
 # =========================================================================
 def main():
-    st.set_page_config(page_title="Super App - V3 Ultimate Quiz & Game", layout="wide")
-    
+    st.set_page_config(page_title="E-Learning Creator V3", page_icon="🎓", layout="wide")
     init_session()
     
+    # Ẩn hoàn toàn Sidebar mặc định của Streamlit và Căn chỉnh lại giao diện
     st.markdown("""
     <style>
+        [data-testid="collapsedControl"] { display: none; }
+        section[data-testid="stSidebar"] { display: none; }
+        
         .stButton>button { border-radius: 8px; font-weight: bold; width: 100%; }
         .stTextInput>div>div>input { border-radius: 6px; }
         .block-container { padding-top: 2rem; padding-bottom: 2rem; }
-        .css-1d391kg { padding-top: 1rem; }
     </style>
     """, unsafe_allow_html=True)
     
-    st.sidebar.markdown("## 📱 MENU CHÍNH")
-    page = st.sidebar.radio("Điều hướng", ["⚙️ Cấu Hình Chung", "📚 Bài Giảng", "📝 Bài Tập & Trò Chơi"], 
-                            index=["Config", "Lecture", "Quiz"].index(st.session_state.current_page) if st.session_state.current_page in ["Config", "Lecture", "Quiz"] else 0)
+    st.title("🎓 E-Learning Creator V3 Ultimate")
     
+    # TẠO THANH ĐIỀU HƯỚNG VÀ NÚT CHỨC NĂNG NGAY TRÊN ĐẦU TRANG
+    col_nav, col_action = st.columns([1, 1])
+    
+    with col_nav:
+        page = st.radio("📌 ĐIỀU HƯỚNG:", 
+                        ["⚙️ Cấu Hình Chung", "📚 Bài Giảng", "📝 Bài Tập & Trò Chơi"],
+                        index=["Config", "Lecture", "Quiz"].index(st.session_state.current_page) if st.session_state.current_page in ["Config", "Lecture", "Quiz"] else 0,
+                        horizontal=True)
+        
+    with col_action:
+        st.write("🛠️ ĐIỀU KHIỂN:")
+        c_btn1, c_btn2 = st.columns(2)
+        if c_btn1.button("🔄 LÀM MỚI TẤT CẢ", type="secondary"):
+            st.session_state.lecture_data = []
+            st.session_state.quiz_data = []
+            save_data()
+            st.rerun()
+            
+        if c_btn2.button("🚀 XUẤT MÃ GỘP BÀI", type="primary"):
+            code = generate_code_block()
+            st.session_state.generated_code = code
+            st.session_state.show_code = True
+            st.rerun()
+
+    # Kiểm tra chuyển Tab
     target_page = "Config"
     if page == "📚 Bài Giảng": target_page = "Lecture"
     elif page == "📝 Bài Tập & Trò Chơi": target_page = "Quiz"
@@ -1283,31 +1292,20 @@ def main():
         st.session_state.current_page = target_page
         st.session_state.edit_idx = None
         st.rerun()
-    
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📤 ĐIỀU KHIỂN XUẤT MÃ")
-    
-    if st.sidebar.button("🔄 LÀM MỚI TẤT CẢ", type="secondary"):
-        st.session_state.lecture_data = []
-        st.session_state.quiz_data = []
-        save_data()
-        st.rerun()
-        
-    if st.sidebar.button("🚀 XUẤT MÃ GỘP BÀI", type="primary"):
-        code = generate_code_block()
-        st.session_state.generated_code = code
-        st.session_state.show_code = True
-        st.rerun()
 
+    # Xử lý hiển thị Code sau khi xuất
     if st.session_state.get('show_code', False) and 'generated_code' in st.session_state:
-        st.sidebar.success("Tạo mã thành công!")
-        st.sidebar.download_button("💾 TẢI FILE CODE (.txt)", data=st.session_state.generated_code, file_name="blog_code.txt", mime="text/plain", use_container_width=True)
+        st.success("🎉 Tạo mã thành công!")
+        st.download_button("💾 TẢI FILE CODE (.txt)", data=st.session_state.generated_code, file_name="blog_code.txt", mime="text/plain", use_container_width=True)
         with st.expander("MÃ CODE ĐÃ TẠO (Bấm biểu tượng Copy ở góc phải)", expanded=True):
             st.code(st.session_state.generated_code, language='html')
-        if st.button("Đóng mã code"):
+        if st.button("❌ Đóng khung mã code"):
             st.session_state.show_code = False
             st.rerun()
 
+    st.markdown("---")
+
+    # ==================== RENDER TỪNG TRANG ====================
     if st.session_state.current_page == "Config":
         st.header("⚙️ CẤU HÌNH BÀI VIẾT (Áp dụng chung)")
         with st.container(border=True):
@@ -1325,6 +1323,7 @@ def main():
     elif st.session_state.current_page == "Lecture":
         st.header("📚 Quản lý Bài Giảng")
         
+        # Chế độ Sửa / Thêm Mới
         if st.session_state.edit_idx is not None:
             is_new = (st.session_state.edit_idx == -1)
             idx = st.session_state.edit_idx
@@ -1400,7 +1399,7 @@ def main():
                 del st.session_state.temp_lec
                 navigate("Lecture", None)
                 
-        else:
+        else: # Chế độ hiển thị danh sách Bài Giảng
             if st.button("➕ THÊM BÀI GIẢNG MỚI", type="primary"):
                 navigate("Lecture", -1)
                 
@@ -1430,6 +1429,7 @@ def main():
     elif st.session_state.current_page == "Quiz":
         st.header("📝 Quản lý Bài Tập & Trò Chơi")
         
+        # Chế độ Sửa / Thêm mới
         if st.session_state.edit_idx is not None:
             is_new = (st.session_state.edit_idx == -1)
             idx = st.session_state.edit_idx
@@ -1570,6 +1570,7 @@ def main():
             
             col_btn1, col_btn2 = st.columns([2, 5])
             if col_btn1.button("✔ LƯU BÀI TẬP", type="primary"):
+                # Processing logic before saving
                 if t_data["q_type"] == "Điền từ (V3)":
                     text = t_data.get("v3_raw_text", "")
                     blanks = re.findall(r'\[\[(.*?)\]\]', text)
@@ -1646,9 +1647,7 @@ def main():
                 del st.session_state.temp_quiz
                 navigate("Quiz", None)
                 
-        else:
-            st.markdown("### 📋 Danh sách Bài Tập & Trò Chơi")
-            
+        else: # Chế độ hiển thị danh sách Bài Tập
             col1, col2 = st.columns([1, 1])
             with col1:
                 if st.button("➕ THÊM BÀI TẬP / TRÒ CHƠI", type="primary", use_container_width=True):
