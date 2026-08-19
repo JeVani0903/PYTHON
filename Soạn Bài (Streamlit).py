@@ -4,12 +4,22 @@ import random
 import string
 import json
 import base64
-import time
 import os
 
 # =========================================================================
-# HELPER FUNCTIONS & THUẬT TOÁN
+# THIẾT LẬP GIAO DIỆN CHUNG
 # =========================================================================
+st.set_page_config(page_title="E-Learning Creator V3", page_icon="🎓", layout="wide")
+
+# Custom CSS để làm đẹp giao diện Streamlit
+st.markdown("""
+<style>
+    .main-header { color: #1a73e8; font-weight: bold; border-bottom: 2px solid #1a73e8; padding-bottom: 10px; margin-bottom: 20px; }
+    .stButton>button { border-radius: 8px; font-weight: bold; }
+    .item-box { background-color: #f8f9fa; padding: 15px; border-radius: 10px; border: 1px solid #e0e0e0; margin-bottom: 15px; }
+</style>
+""", unsafe_allow_html=True)
+
 DRIVE_REGEX = re.compile(r'(?:id=|/d/)([\w-]+)')
 
 def extract_gdrive_id(url):
@@ -63,85 +73,9 @@ def parse_audio(txt, sys_id):
     txt, img, aud = parse_media(txt, sys_id)
     return txt, aud
 
-# Crossword Logic
-def is_valid_placement(word, x, y, direction, grid):
-    for i, char in enumerate(word):
-        cx = x + i if direction == 'across' else x
-        cy = y if direction == 'across' else y + i
-        if (cx, cy) in grid:
-            if grid[(cx, cy)] != char: return False
-        else:
-            if direction == 'across':
-                if (cx, cy - 1) in grid or (cx, cy + 1) in grid: return False
-            else:
-                if (cx - 1, cy) in grid or (cx + 1, cy) in grid: return False
-        if i == 0:
-            if direction == 'across' and (cx - 1, cy) in grid: return False
-            if direction == 'down' and (cx, cy - 1) in grid: return False
-        if i == len(word) - 1:
-            if direction == 'across' and (cx + 1, cy) in grid: return False
-            if direction == 'down' and (cx, cy + 1) in grid: return False
-    return True
-
-def generate_crossword_layout(original_word_list):
-    max_attempts = 1000
-    for attempt in range(max_attempts):
-        word_list = original_word_list.copy()
-        if attempt == 0:
-            word_list.sort(key=lambda x: len(x['word']), reverse=True)
-        else:
-            random.shuffle(word_list)
-            
-        placed = []
-        grid = {}
-        success = True
-        
-        for item in word_list:
-            word = item['word']
-            clue = item['clue']
-            if not placed:
-                placed.append({"word": word, "x": 0, "y": 0, "dir": "across", "clue": clue})
-                for i, c in enumerate(word): grid[(i, 0)] = c
-                continue
-            
-            valid_placements = []
-            for p in placed:
-                for i, p_char in enumerate(p['word']):
-                    for j, char in enumerate(word):
-                        if p_char == char:
-                            if p['dir'] == 'across':
-                                start_x, start_y, new_dir = p['x'] + i, p['y'] - j, 'down'
-                            else:
-                                start_x, start_y, new_dir = p['x'] - j, p['y'] + i, 'across'
-                            if is_valid_placement(word, start_x, start_y, new_dir, grid):
-                                valid_placements.append((start_x, start_y, new_dir))
-            if valid_placements:
-                start_x, start_y, new_dir = random.choice(valid_placements)
-                placed.append({"word": word, "x": start_x, "y": start_y, "dir": new_dir, "clue": clue})
-                for i, char in enumerate(word):
-                    if new_dir == 'across': grid[(start_x + i, start_y)] = char
-                    else: grid[(start_x, start_y + i)] = char
-            else:
-                success = False
-                break 
-        if success:
-            min_x = min([p['x'] for p in placed])
-            min_y = min([p['y'] for p in placed])
-            for p in placed:
-                p['x'] -= min_x
-                p['y'] -= min_y
-            start_coords = []
-            for p in placed:
-                if (p['x'], p['y']) not in start_coords:
-                    start_coords.append((p['x'], p['y']))
-            start_coords.sort(key=lambda c: (c[1], c[0])) 
-            coord_to_id = {coord: idx + 1 for idx, coord in enumerate(start_coords)}
-            for p in placed:
-                p['id'] = coord_to_id[(p['x'], p['y'])]
-            placed.sort(key=lambda p: (p['id'], p['dir']))
-            return placed, "Success"
-    return None, "Vẫn không thể xếp được lưới sau 1000 lần thử. Vui lòng đổi/thêm/bớt từ khóa!"
-
+# =========================================================================
+# THUẬT TOÁN TẠO LƯỚI Ô CHỮ
+# =========================================================================
 def check_connectivity(words_data):
     n = len(words_data)
     adj = {i: [] for i in range(n)}
@@ -166,13 +100,72 @@ def check_connectivity(words_data):
         components.append(comp)
     if len(components) > 1:
         components.sort(key=len)
-        smallest_comp = components[0]
-        isolated_words = [words_data[i]['word'] for i in smallest_comp]
-        return isolated_words
+        return [words_data[i]['word'] for i in components[0]]
     return []
 
+def is_valid_placement(word, x, y, direction, grid):
+    for i, char in enumerate(word):
+        cx = x + i if direction == 'across' else x
+        cy = y if direction == 'across' else y + i
+        if (cx, cy) in grid:
+            if grid[(cx, cy)] != char: return False
+        else:
+            if direction == 'across':
+                if (cx, cy - 1) in grid or (cx, cy + 1) in grid: return False
+            else:
+                if (cx - 1, cy) in grid or (cx + 1, cy) in grid: return False
+        if i == 0:
+            if direction == 'across' and (cx - 1, cy) in grid: return False
+            if direction == 'down' and (cx, cy - 1) in grid: return False
+        if i == len(word) - 1:
+            if direction == 'across' and (cx + 1, cy) in grid: return False
+            if direction == 'down' and (cx, cy + 1) in grid: return False
+    return True
+
+def generate_crossword_layout(original_word_list):
+    max_attempts = 1000
+    for attempt in range(max_attempts):
+        word_list = original_word_list.copy()
+        if attempt == 0: word_list.sort(key=lambda x: len(x['word']), reverse=True)
+        else: random.shuffle(word_list)
+        placed, grid, success = [], {}, True
+        for item in word_list:
+            word, clue = item['word'], item['clue']
+            if not placed:
+                placed.append({"word": word, "x": 0, "y": 0, "dir": "across", "clue": clue})
+                for i, c in enumerate(word): grid[(i, 0)] = c
+                continue
+            valid_placements = []
+            for p in placed:
+                for i, p_char in enumerate(p['word']):
+                    for j, char in enumerate(word):
+                        if p_char == char:
+                            start_x, start_y, new_dir = (p['x'] + i, p['y'] - j, 'down') if p['dir'] == 'across' else (p['x'] - j, p['y'] + i, 'across')
+                            if is_valid_placement(word, start_x, start_y, new_dir, grid):
+                                valid_placements.append((start_x, start_y, new_dir))
+            if valid_placements:
+                start_x, start_y, new_dir = random.choice(valid_placements)
+                placed.append({"word": word, "x": start_x, "y": start_y, "dir": new_dir, "clue": clue})
+                for i, char in enumerate(word):
+                    if new_dir == 'across': grid[(start_x + i, start_y)] = char
+                    else: grid[(start_x, start_y + i)] = char
+            else:
+                success = False; break 
+        if success:
+            min_x, min_y = min([p['x'] for p in placed]), min([p['y'] for p in placed])
+            for p in placed: p['x'] -= min_x; p['y'] -= min_y
+            start_coords = []
+            for p in placed:
+                if (p['x'], p['y']) not in start_coords: start_coords.append((p['x'], p['y']))
+            start_coords.sort(key=lambda c: (c[1], c[0])) 
+            coord_to_id = {coord: idx + 1 for idx, coord in enumerate(start_coords)}
+            for p in placed: p['id'] = coord_to_id[(p['x'], p['y'])]
+            placed.sort(key=lambda p: (p['id'], p['dir']))
+            return placed, "Success"
+    return None, "Vẫn không thể xếp được lưới sau 1000 lần thử. Vui lòng đổi/thêm/bớt từ khóa!"
+
 # =========================================================================
-# SYSTEM & DATA MANAGEMENT
+# QUẢN LÝ DỮ LIỆU
 # =========================================================================
 DATA_FILE = "v3_backup_data.json"
 
@@ -201,7 +194,7 @@ def init_session():
         st.session_state.config = data.get("config", {"cover": "", "timer": ""})
         st.session_state.lecture_data = data.get("lecture_data", [])
         st.session_state.quiz_data = data.get("quiz_data", [])
-        st.session_state.current_page = "config"
+        st.session_state.current_page = "Quiz"
         st.session_state.edit_idx = -1
         st.session_state.initialized = True
 
@@ -211,7 +204,7 @@ def navigate(page, edit_idx=-1):
     st.rerun()
 
 # =========================================================================
-# CODE GENERATOR
+# CODE GENERATOR (BẢO LƯU TOÀN BỘ TÍNH NĂNG VÀ CSS)
 # =========================================================================
 def generate_code_block():
     sys_id = ''.join(random.choices(string.ascii_lowercase + string.digits, k=6))
@@ -273,7 +266,7 @@ def generate_code_block():
             a_url = optimize_url(blk.get('link', ''))
             if a_url: lec_html_parts.append(f'<div class="lecture-section"><h3 class="section-title">🎧 {title}</h3><div class="standalone-audio"><audio controls><source src="{a_url}" type="audio/mpeg"></audio></div></div>')
 
-    # 2. QUIZ
+    # QUIZ Processing
     quiz_html_parts, js_grading_parts, js_init_parts = [], [], []
     max_score = 0
     valid_quizzes = st.session_state.quiz_data
@@ -323,12 +316,9 @@ def generate_code_block():
                     b64_tts = base64.b64encode(tts_text.encode('utf-8')).decode('utf-8')
                     audio_btn = f'<button type="button" class="audio-icon-btn" onclick="speakTTSBase64_{sys_id}(\'{b64_tts}\')" style="margin: 0 0 0 10px; flex-shrink: 0; width: 35px; height: 35px; font-size: 16px;">🔊</button>'
                     display_txt = "" 
-                
                 if not display_txt and not opt_img_html and audio_btn:
                     display_txt = f"Đáp án {val}"
-                    
                 inner_content = f"{opt_img_html}<span class='opt-text' style='margin-left: 5px;'>{display_txt}</span>" if display_txt else opt_img_html
-                    
                 labels.append(f'<div style="display: flex; align-items: center; margin-bottom: 8px;">'
                               f'<label class="opt-label hover-yellow" id="label-q{idx}-{val}_{sys_id}" style="flex-grow: 1; margin: 0; display:flex; align-items:center;">'
                               f'<input type="radio" name="q{idx}_{sys_id}" value="{val}" style="margin-right:8px;"> '
@@ -350,8 +340,7 @@ def generate_code_block():
                 for j, m in enumerate(valid_matches):
                     l_txt, l_img, l_audio = parse_media(m['l'], sys_id)
                     if m.get('l_tts', False):
-                        tts_text = strip_html(l_txt)
-                        b64_tts = base64.b64encode(tts_text.encode('utf-8')).decode('utf-8')
+                        b64_tts = base64.b64encode(strip_html(l_txt).encode('utf-8')).decode('utf-8')
                         l_audio = f'<button type="button" class="audio-icon-btn" onclick="speakTTSBase64_{sys_id}(\'{b64_tts}\')" style="margin: 0; flex-shrink: 0; width: 35px; height: 35px; font-size: 16px;">🔊</button>'
                         l_txt = ""  
                     left_html += f'<div class="match-item hover-yellow" style="display:flex; align-items:center;"><strong>{j+1}.</strong> {l_img}<span style="margin-left:5px; flex-grow:1;">{l_txt}</span>{l_audio}</div>'
@@ -359,8 +348,7 @@ def generate_code_block():
                 for r_item in right_items:
                     r_txt, r_img, r_audio = parse_media(r_item['text'], sys_id)
                     if r_item.get('r_tts', False):
-                        tts_text = strip_html(r_txt)
-                        b64_tts = base64.b64encode(tts_text.encode('utf-8')).decode('utf-8')
+                        b64_tts = base64.b64encode(strip_html(r_txt).encode('utf-8')).decode('utf-8')
                         r_audio = f'<button type="button" class="audio-icon-btn" onclick="speakTTSBase64_{sys_id}(\'{b64_tts}\')" style="margin: 0; flex-shrink: 0; width: 35px; height: 35px; font-size: 16px;">🔊</button>'
                         r_txt = "" 
                     right_html += f'<div class="match-item right-item hover-yellow" data-orig-idx="{r_item["orig_idx"]}" style="display:flex; align-items:center;"><strong class="right-label">{r_item["id"]}.</strong> {r_img}<span style="margin-left:5px; flex-grow:1;">{r_txt}</span>{r_audio}</div>'
@@ -387,8 +375,7 @@ def generate_code_block():
             
             v3_audio_btn = ""
             if q.get("v3_tts", False):
-                tts_v3_text = strip_html(q.get("v3_raw_text", ""))
-                b64_tts_v3 = base64.b64encode(tts_v3_text.encode('utf-8')).decode('utf-8')
+                b64_tts_v3 = base64.b64encode(strip_html(q.get("v3_raw_text", "")).encode('utf-8')).decode('utf-8')
                 v3_audio_btn = f'''<div style="margin-bottom: 15px;"><button type="button" style="background:#e8f0fe; border:none; padding:8px 15px; border-radius:20px; color:#1a73e8; font-weight:bold; cursor:pointer;" onclick="speakTTSBase64_{sys_id}('{b64_tts_v3}')">🔊 Nghe Đoạn Văn</button></div>'''
 
             v3_img_url = get_direct_img_link(q.get("v3_image", ""), "w800")
@@ -426,14 +413,9 @@ def generate_code_block():
             </div>
             <script>
               const wb_{sys_id}_{idx} = {json_wb}; let up_{sys_id}_{idx}=[], curr_{sys_id}_{idx}=null, s_{sys_id}_{idx}=0, q_{sys_id}_{idx}=1;
-              
-              document.getElementById("scramble-guess-{sys_id}-{idx}").addEventListener("keydown", function(e) {{
-                  if (e.key === "Enter") {{ e.preventDefault(); e.stopPropagation(); checkScramble_{sys_id}_{idx}(); }}
-              }});
-
+              document.getElementById("scramble-guess-{sys_id}-{idx}").addEventListener("keydown", function(e) {{ if (e.key === "Enter") {{ e.preventDefault(); e.stopPropagation(); checkScramble_{sys_id}_{idx}(); }} }});
               function shuf_{sys_id}_{idx}(w) {{ let a=w.split(''); for(let i=a.length-1;i>0;i--) {{let j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];}} return a.join(''); }}
               function startScramble_{sys_id}_{idx}() {{ up_{sys_id}_{idx}=[...wb_{sys_id}_{idx}]; s_{sys_id}_{idx}=0; q_{sys_id}_{idx}=1; document.getElementById("scramble-score-{sys_id}-{idx}").innerText=s_{sys_id}_{idx}; document.getElementById("scramble-play-{sys_id}-{idx}").style.display="block"; document.getElementById("scramble-result-{sys_id}-{idx}").style.display="none"; nextScramble_{sys_id}_{idx}(); }}
-              
               function nextScramble_{sys_id}_{idx}() {{
                 if(up_{sys_id}_{idx}.length===0){{ return; }}
                 document.getElementById("scramble-count-{sys_id}-{idx}").innerText=q_{sys_id}_{idx}+"/"+wb_{sys_id}_{idx}.length;
@@ -442,7 +424,6 @@ def generate_code_block():
                 document.getElementById("scramble-hint-{sys_id}-{idx}").innerText="Gợi ý: "+curr_{sys_id}_{idx}.hint;
                 let inp = document.getElementById("scramble-guess-{sys_id}-{idx}"); inp.value=""; inp.disabled=false; inp.focus(); document.getElementById("scramble-msg-{sys_id}-{idx}").innerText="";
               }}
-
               function checkScramble_{sys_id}_{idx}() {{
                 let inp = document.getElementById("scramble-guess-{sys_id}-{idx}");
                 let v = inp.value.toUpperCase().trim(); let m = document.getElementById("scramble-msg-{sys_id}-{idx}");
@@ -975,7 +956,7 @@ def generate_code_block():
 .opt-label.incorrect {{ background: #fce8e6; border-color: #c5221f; color: #c5221f; }}
 
 .essay-container {{ display: flex; flex-direction: column; gap: 8px; width: 100%; }}
-.blank-input {{ border: none; border-bottom: 2px solid #95a5a6; background: #f1f3f4; border-radius: 4px 4px 0 0; text-align: center; font-weight: bold; color: #2980b9; outline: none; transition: all 0.3s ease; padding: 4px 8px; margin: 0 4px; box-sizing: border-box; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1); }}
+.blank-input {{ border: none; border-bottom: 2px solid #95a5a6; background: #f8f9fa; border-radius: 4px 4px 0 0; text-align: center; font-weight: bold; color: #2980b9; outline: none; transition: all 0.3s ease; padding: 2px 8px; margin: 0 4px; box-sizing: border-box; box-shadow: inset 0 -1px 0 rgba(0,0,0,0.1); }}
 .blank-input:focus {{ border-bottom: 2px solid #1a73e8; background-color: #e8f0fe; }}
 .input-correct {{ border-bottom: 2px solid #27ae60 !important; background: #e6f4ea !important; color: #137333 !important; font-weight: bold; }}
 .input-incorrect {{ border-bottom: 2px solid #e74c3c !important; background: #fce8e6 !important; color: #c5221f !important; }}
@@ -1274,8 +1255,18 @@ def main():
     # 1. Khởi tạo State (Thay thế cho CoreManager)
     init_session()
     
+    # Custom CSS
+    st.markdown("""
+    <style>
+        .stButton>button { border-radius: 8px; font-weight: bold; width: 100%; }
+        .stTextInput>div>div>input { border-radius: 6px; }
+        .block-container { padding-top: 2rem; padding-bottom: 2rem; }
+        .css-1d391kg { padding-top: 1rem; }
+    </style>
+    """, unsafe_allow_html=True)
+    
     # 2. Sidebar Navigation
-    st.sidebar.title("MENU CHÍNH")
+    st.sidebar.markdown("## 📱 MENU CHÍNH")
     page = st.sidebar.radio("Điều hướng", ["⚙️ Cấu Hình Chung", "📚 Bài Giảng", "📝 Bài Tập & Trò Chơi"], 
                             index=["Config", "Lecture", "Quiz"].index(st.session_state.current_page) if st.session_state.current_page in ["Config", "Lecture", "Quiz"] else 0)
     
@@ -1285,15 +1276,15 @@ def main():
     elif page == "📝 Bài Tập & Trò Chơi": st.session_state.current_page = "Quiz"
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("**ĐIỀU KHIỂN XUẤT MÃ**")
+    st.sidebar.markdown("### 📤 ĐIỀU KHIỂN XUẤT MÃ")
     
-    if st.sidebar.button("🔄 LÀM MỚI TẤT CẢ", use_container_width=True, type="secondary"):
+    if st.sidebar.button("🔄 LÀM MỚI TẤT CẢ", type="secondary"):
         st.session_state.lecture_data = []
         st.session_state.quiz_data = []
         save_data()
         st.rerun()
         
-    if st.sidebar.button("🚀 XUẤT MÃ GỘP BÀI", use_container_width=True, type="primary"):
+    if st.sidebar.button("🚀 XUẤT MÃ GỘP BÀI", type="primary"):
         code = generate_code_block()
         st.session_state.generated_code = code
         st.session_state.show_code = True
@@ -1301,26 +1292,28 @@ def main():
 
     # Xử lý hiển thị Code sau khi xuất
     if st.session_state.get('show_code', False) and 'generated_code' in st.session_state:
-        st.success("Tạo mã thành công! Bạn có thể Copy ở khung dưới hoặc tải về.")
-        st.download_button("💾 TẢI FILE CODE (.txt)", data=st.session_state.generated_code, file_name="blog_code.txt", mime="text/plain", use_container_width=True)
-        with st.expander("MÃ CODE ĐÃ TẠO (Bấm Copy ở góc phải)", expanded=True):
+        st.sidebar.success("Tạo mã thành công!")
+        st.sidebar.download_button("💾 TẢI FILE CODE (.txt)", data=st.session_state.generated_code, file_name="blog_code.txt", mime="text/plain", use_container_width=True)
+        with st.expander("MÃ CODE ĐÃ TẠO (Bấm biểu tượng Copy ở góc phải)", expanded=True):
             st.code(st.session_state.generated_code, language='html')
         if st.button("Đóng mã code"):
             st.session_state.show_code = False
             st.rerun()
 
-    st.sidebar.markdown("---")
-    
     # 3. Render Pages
     if st.session_state.current_page == "Config":
         st.header("⚙️ CẤU HÌNH BÀI VIẾT (Áp dụng chung)")
-        cover = st.text_input("Ảnh Cover (Làm Thumbnail Blogspot):", value=st.session_state.config.get('cover',''), placeholder="Dán Link ảnh Cover trực tiếp vào đây...")
-        timer = st.text_input("Thời gian làm toàn bộ Bài Tập (Phút):", value=st.session_state.config.get('timer',''), placeholder="Ví dụ: 15 (Để trống = Không giới hạn)")
-        
-        if cover != st.session_state.config.get('cover','') or timer != st.session_state.config.get('timer',''):
-            st.session_state.config['cover'] = cover
-            st.session_state.config['timer'] = timer
-            save_data()
+        with st.container(border=True):
+            st.markdown("#### 🖼️ Ảnh Cover (Làm Thumbnail Blogspot)")
+            cover = st.text_input("Dán Link ảnh Cover trực tiếp vào đây:", value=st.session_state.config.get('cover',''))
+            
+            st.markdown("#### ⏳ Thời gian làm toàn bộ Bài Tập")
+            timer = st.text_input("Nhập số phút (Ví dụ: 15). Để trống = Không giới hạn thời gian", value=st.session_state.config.get('timer',''))
+            
+            if cover != st.session_state.config.get('cover','') or timer != st.session_state.config.get('timer',''):
+                st.session_state.config['cover'] = cover
+                st.session_state.config['timer'] = timer
+                save_data()
 
     elif st.session_state.current_page == "Lecture":
         st.header("📚 Quản lý Bài Giảng")
@@ -1344,51 +1337,52 @@ def main():
                     if not st.session_state.temp_lec.get("fc_rows"): st.session_state.temp_lec["fc_rows"] = [{"w": "", "m": "", "a_tts": False, "i": ""}]
                     if not st.session_state.temp_lec.get("gr_rows"): st.session_state.temp_lec["gr_rows"] = [{"t": "", "a_tts": False, "i": "", "d_html": "", "d_state": "", "d_raw": ""}]
 
-            st.subheader(f"{'Thêm mới' if is_new else 'Sửa'} Bài Giảng")
+            st.subheader(f"{'✨ Thêm mới' if is_new else '✏️ Sửa'} Bài Giảng")
             t_data = st.session_state.temp_lec
             
-            t_data["type"] = st.selectbox("Loại nội dung:", ["🎬 Video Bài Học", "📇 Danh sách Flashcard", "📖 Ngữ Pháp", "🎧 Audio Độc Lập"], 
-                                          index=["🎬 Video Bài Học", "📇 Danh sách Flashcard", "📖 Ngữ Pháp", "🎧 Audio Độc Lập"].index(t_data["type"]))
-            t_data["title"] = st.text_input("Tiêu đề hiển thị:", value=t_data["title"])
-            
-            if t_data["type"] in ["🎬 Video Bài Học", "🎧 Audio Độc Lập"]:
-                t_data["link"] = st.text_input("Dán Link Video G-Drive hoặc Link Audio (.mp3):", value=t_data["link"])
+            with st.container(border=True):
+                c1, c2 = st.columns([1, 2])
+                t_data["type"] = c1.selectbox("Loại nội dung:", ["🎬 Video Bài Học", "📇 Danh sách Flashcard", "📖 Ngữ Pháp", "🎧 Audio Độc Lập"], 
+                                              index=["🎬 Video Bài Học", "📇 Danh sách Flashcard", "📖 Ngữ Pháp", "🎧 Audio Độc Lập"].index(t_data["type"]))
+                t_data["title"] = c2.text_input("Tiêu đề hiển thị:", value=t_data["title"])
                 
-            elif t_data["type"] == "📇 Danh sách Flashcard":
-                st.markdown("#### Từ vựng Flashcard")
-                for r_idx, r in enumerate(t_data["fc_rows"]):
-                    cols = st.columns([3, 3, 2, 3, 1])
-                    r["w"] = cols[0].text_input(f"Từ vựng {r_idx+1}", value=r["w"], key=f"fc_w_{r_idx}")
-                    r["m"] = cols[1].text_input(f"Nghĩa {r_idx+1}", value=r["m"], key=f"fc_m_{r_idx}")
-                    r["a_tts"] = cols[2].checkbox("Đọc Audio (TTS)", value=r["a_tts"], key=f"fc_tts_{r_idx}")
-                    r["i"] = cols[3].text_input(f"Link Ảnh {r_idx+1}", value=r["i"], key=f"fc_i_{r_idx}")
-                    if cols[4].button("❌", key=f"fc_del_{r_idx}"):
-                        t_data["fc_rows"].pop(r_idx)
+                if t_data["type"] in ["🎬 Video Bài Học", "🎧 Audio Độc Lập"]:
+                    t_data["link"] = st.text_input("Dán Link Video G-Drive hoặc Link Audio (.mp3):", value=t_data["link"])
+                    
+                elif t_data["type"] == "📇 Danh sách Flashcard":
+                    st.markdown("#### 📝 Từ vựng Flashcard")
+                    for r_idx, r in enumerate(t_data["fc_rows"]):
+                        cols = st.columns([3, 3, 2, 3, 1])
+                        r["w"] = cols[0].text_input(f"Từ vựng {r_idx+1}", value=r["w"], key=f"fc_w_{r_idx}")
+                        r["m"] = cols[1].text_input(f"Nghĩa {r_idx+1}", value=r["m"], key=f"fc_m_{r_idx}")
+                        r["a_tts"] = cols[2].checkbox("Đọc Audio (TTS)", value=r["a_tts"], key=f"fc_tts_{r_idx}")
+                        r["i"] = cols[3].text_input(f"Link Ảnh {r_idx+1}", value=r["i"], key=f"fc_i_{r_idx}")
+                        if cols[4].button("❌", key=f"fc_del_{r_idx}"):
+                            t_data["fc_rows"].pop(r_idx)
+                            st.rerun()
+                    if st.button("➕ Thêm Từ Vựng"):
+                        t_data["fc_rows"].append({"w": "", "m": "", "a_tts": False, "i": ""})
                         st.rerun()
-                if st.button("➕ Thêm Từ Vựng"):
-                    t_data["fc_rows"].append({"w": "", "m": "", "a_tts": False, "i": ""})
-                    st.rerun()
-                    
-            elif t_data["type"] == "📖 Ngữ Pháp":
-                st.markdown("#### Cấu trúc Ngữ pháp")
-                for r_idx, r in enumerate(t_data["gr_rows"]):
-                    st.markdown(f"**Mục {r_idx+1}**")
-                    cols = st.columns([4, 2, 4, 1])
-                    r["t"] = cols[0].text_input("Tên cấu trúc", value=r["t"], key=f"gr_t_{r_idx}")
-                    r["a_tts"] = cols[1].checkbox("Đọc Audio (TTS)", value=r["a_tts"], key=f"gr_tts_{r_idx}")
-                    r["i"] = cols[2].text_input("Link Ảnh", value=r["i"], key=f"gr_i_{r_idx}")
-                    if cols[3].button("❌", key=f"gr_del_{r_idx}"):
-                        t_data["gr_rows"].pop(r_idx)
+                        
+                elif t_data["type"] == "📖 Ngữ Pháp":
+                    st.markdown("#### 📖 Cấu trúc Ngữ pháp")
+                    for r_idx, r in enumerate(t_data["gr_rows"]):
+                        st.markdown(f"**Mục {r_idx+1}**")
+                        cols = st.columns([4, 2, 4, 1])
+                        r["t"] = cols[0].text_input("Tên cấu trúc", value=r["t"], key=f"gr_t_{r_idx}")
+                        r["a_tts"] = cols[1].checkbox("Đọc Audio (TTS)", value=r["a_tts"], key=f"gr_tts_{r_idx}")
+                        r["i"] = cols[2].text_input("Link Ảnh", value=r["i"], key=f"gr_i_{r_idx}")
+                        if cols[3].button("❌", key=f"gr_del_{r_idx}"):
+                            t_data["gr_rows"].pop(r_idx)
+                            st.rerun()
+                        
+                        st.caption("Nhập nội dung HTML (hoặc text thường). Bạn có thể dùng `<b>chữ đậm</b>`, `<i>chữ nghiêng</i>`...")
+                        r["d_raw"] = st.text_area("Nội dung", value=r.get("d_raw", ""), height=150, key=f"gr_d_{r_idx}")
+                        r["d_html"] = r["d_raw"].replace('\n', '<br>')
+                        
+                    if st.button("➕ Thêm Cấu Trúc"):
+                        t_data["gr_rows"].append({"t": "", "a_tts": False, "i": "", "d_html": "", "d_state": "", "d_raw": ""})
                         st.rerun()
-                    
-                    # HTML Editor Simplified via text_area
-                    st.caption("Nhập nội dung HTML (hoặc text thường). Bạn có thể dùng <b>chữ đậm</b>, <i>chữ nghiêng</i>...")
-                    r["d_raw"] = st.text_area("Nội dung", value=r.get("d_raw", ""), height=150, key=f"gr_d_{r_idx}")
-                    r["d_html"] = r["d_raw"].replace('\n', '<br>')
-                    
-                if st.button("➕ Thêm Cấu Trúc"):
-                    t_data["gr_rows"].append({"t": "", "a_tts": False, "i": "", "d_html": "", "d_state": "", "d_raw": ""})
-                    st.rerun()
 
             col_btn1, col_btn2 = st.columns([1, 5])
             if col_btn1.button("✔ LƯU LẠI", type="primary"):
@@ -1402,17 +1396,16 @@ def main():
                 navigate("Lecture", None)
                 
         else: # Hiển thị danh sách
-            col1, col2 = st.columns([1, 1])
-            if col1.button("➕ THÊM BÀI GIẢNG MỚI", type="primary"):
+            if st.button("➕ THÊM BÀI GIẢNG MỚI", type="primary"):
                 navigate("Lecture", -1)
                 
             if len(st.session_state.lecture_data) > 0:
                 to_delete = []
                 for i, data in enumerate(st.session_state.lecture_data):
                     title = data.get('title') or data.get('type')
-                    with st.container():
+                    with st.container(border=True):
                         c1, c2, c3, c4 = st.columns([1, 6, 1, 1])
-                        if c1.checkbox("Chọn", key=f"lec_chk_{i}"): to_delete.append(i)
+                        if c1.checkbox("Chọn xóa", key=f"lec_chk_{i}"): to_delete.append(i)
                         c2.markdown(f"**Mục {i+1}: {title[:70]}**")
                         if c3.button("✏️ Sửa", key=f"lec_edit_{i}"): navigate("Lecture", i)
                         if c4.button("📑 Nhân bản", key=f"lec_clone_{i}"):
@@ -1453,7 +1446,6 @@ def main():
                 else:
                     import copy
                     st.session_state.temp_quiz = copy.deepcopy(st.session_state.quiz_data[idx])
-                    # Ensure all keys exist for older saves
                     q = st.session_state.temp_quiz
                     if 'mcq_tts' not in q: q['mcq_tts'] = {"A":False, "B":False, "C":False, "D":False}
                     if 'matches' not in q or not q['matches']: q['matches'] = [{"l":"", "r":"", "l_tts":False, "r_tts":False}]
@@ -1461,111 +1453,116 @@ def main():
                     if 'hidden_imgs' not in q or not q['hidden_imgs']: q['hidden_imgs'] = [""]
                     if 'memory_pairs' not in q or not q['memory_pairs']: q['memory_pairs'] = [{"w":"", "img":""}]
 
+            st.subheader(f"{'✨ Thêm mới' if is_new else '✏️ Sửa'} Bài Tập")
             t_data = st.session_state.temp_quiz
             
-            t_data["q_type"] = st.selectbox("Loại câu hỏi / Trò chơi:", 
-                                            ["Trắc nghiệm", "Điền từ (V3)", "Nối câu", "Game: Sắp Xếp Từ", "Game: Tìm Từ Vựng", "Game: Ô Chữ", "Game: Bức Tranh Bí Ẩn", "Game: Lật Thẻ Nhớ"],
-                                            index=["Trắc nghiệm", "Điền từ (V3)", "Nối câu", "Game: Sắp Xếp Từ", "Game: Tìm Từ Vựng", "Game: Ô Chữ", "Game: Bức Tranh Bí Ẩn", "Game: Lật Thẻ Nhớ"].index(t_data.get("q_type", "Trắc nghiệm")))
-            t_data["topic"] = st.text_input("Chủ đề chung (Tùy chọn):", value=t_data.get("topic", ""))
+            with st.container(border=True):
+                c1, c2 = st.columns([1, 2])
+                t_data["q_type"] = c1.selectbox("Loại câu hỏi / Trò chơi:", 
+                                                ["Trắc nghiệm", "Điền từ (V3)", "Nối câu", "Game: Sắp Xếp Từ", "Game: Tìm Từ Vựng", "Game: Ô Chữ", "Game: Bức Tranh Bí Ẩn", "Game: Lật Thẻ Nhớ"],
+                                                index=["Trắc nghiệm", "Điền từ (V3)", "Nối câu", "Game: Sắp Xếp Từ", "Game: Tìm Từ Vựng", "Game: Ô Chữ", "Game: Bức Tranh Bí Ẩn", "Game: Lật Thẻ Nhớ"].index(t_data.get("q_type", "Trắc nghiệm")))
+                t_data["topic"] = c2.text_input("📌 Nhập chủ đề chung (Tùy chọn):", value=t_data.get("topic", ""))
 
             # Layout 2 cột
             col_l, col_r = st.columns([1, 1])
             
             with col_l:
                 if t_data["q_type"] not in ["Nối câu", "Điền từ (V3)", "Game: Sắp Xếp Từ", "Game: Tìm Từ Vựng", "Game: Ô Chữ", "Game: Bức Tranh Bí Ẩn", "Game: Lật Thẻ Nhớ"]:
-                    st.markdown("**Câu hỏi:**")
+                    st.markdown("#### Nội dung câu hỏi")
                     t_data["q_tts"] = st.checkbox("Chuyển thành Audio (Ẩn text)", value=t_data.get("q_tts", False))
-                    t_data["q_raw"] = st.text_area("Nội dung câu hỏi (Hỗ trợ HTML):", value=t_data.get("q_raw", ""), height=150)
+                    t_data["q_raw"] = st.text_area("Nội dung (Hỗ trợ HTML):", value=t_data.get("q_raw", ""), height=150)
                     t_data["q_html"] = t_data["q_raw"].replace('\n', '<br>')
             
             with col_r:
-                if t_data["q_type"] == "Trắc nghiệm":
-                    st.caption("* Hỗ trợ dán Link Ảnh (G-Drive) và Text cùng lúc")
-                    mcq = t_data.get("mcq", {})
-                    mcq_tts = t_data.get("mcq_tts", {})
-                    
-                    for opt in ['A', 'B', 'C', 'D']:
-                        c1, c2 = st.columns([4, 1])
-                        mcq[opt.lower()] = c1.text_input(f"Đáp án {opt}", value=mcq.get(opt.lower(), ""))
-                        mcq_tts[opt] = c2.checkbox(f"Đọc Audio", value=mcq_tts.get(opt, False), key=f"mcq_tts_{opt}")
-                    
-                    t_data["mcq"] = mcq
-                    t_data["mcq_tts"] = mcq_tts
-                    t_data["mcq"]["correct"] = st.selectbox("Đáp án ĐÚNG:", ["A", "B", "C", "D"], index=["A", "B", "C", "D"].index(mcq.get("correct", "A")))
-                    
-                elif t_data["q_type"] == "Nối câu":
-                    st.caption("* Cả 2 vế đều hỗ trợ Ảnh, Text, Checkbox 'Đọc'")
-                    for r_idx, r in enumerate(t_data["matches"]):
-                        c1, c2, c3, c4, c5 = st.columns([3, 1, 3, 1, 1])
-                        r["l"] = c1.text_input(f"Vế trái {r_idx+1}", value=r.get("l", ""), key=f"m_l_{r_idx}")
-                        r["l_tts"] = c2.checkbox("Đọc", value=r.get("l_tts", False), key=f"m_l_tts_{r_idx}")
-                        r["r"] = c3.text_input(f"Vế phải {r_idx+1}", value=r.get("r", ""), key=f"m_r_{r_idx}")
-                        r["r_tts"] = c4.checkbox("Đọc", value=r.get("r_tts", False), key=f"m_r_tts_{r_idx}")
-                        if c5.button("❌", key=f"m_del_{r_idx}"):
-                            t_data["matches"].pop(r_idx)
-                            st.rerun()
-                    if st.button("➕ Thêm Cặp Nối"):
-                        t_data["matches"].append({"l":"", "r":"", "l_tts":False, "r_tts":False})
-                        st.rerun()
+                st.markdown("#### Thiết lập đáp án / Tùy chọn")
+                with st.container(border=True):
+                    if t_data["q_type"] == "Trắc nghiệm":
+                        st.caption("* Hỗ trợ dán Link Ảnh (G-Drive) và Text cùng lúc")
+                        mcq = t_data.get("mcq", {})
+                        mcq_tts = t_data.get("mcq_tts", {})
                         
-                elif t_data["q_type"] == "Điền từ (V3)":
-                    c1, c2 = st.columns(2)
-                    t_data["v3_tts"] = c1.checkbox("Đọc Audio (Toàn bộ)", value=t_data.get("v3_tts", False))
-                    t_data["v3_image"] = c2.text_input("Link Ảnh (G-Drive):", value=t_data.get("v3_image", ""))
-                    st.caption("* Nhập nội dung, đặt từ cần điền trong ngoặc vuông kép. Ví dụ: The first month is [[January, Jan]]")
-                    t_data["v3_raw_text"] = st.text_area("Nội dung:", value=t_data.get("v3_raw_text", ""), height=200)
+                        for opt in ['A', 'B', 'C', 'D']:
+                            c1, c2 = st.columns([4, 1])
+                            mcq[opt.lower()] = c1.text_input(f"Đáp án {opt}", value=mcq.get(opt.lower(), ""))
+                            mcq_tts[opt] = c2.checkbox(f"Đọc Audio", value=mcq_tts.get(opt, False), key=f"mcq_tts_{opt}")
+                        
+                        t_data["mcq"] = mcq
+                        t_data["mcq_tts"] = mcq_tts
+                        t_data["mcq"]["correct"] = st.selectbox("Đáp án ĐÚNG:", ["A", "B", "C", "D"], index=["A", "B", "C", "D"].index(mcq.get("correct", "A")))
+                        
+                    elif t_data["q_type"] == "Nối câu":
+                        st.caption("* Cả 2 vế đều hỗ trợ Ảnh, Text, Checkbox 'Đọc'")
+                        for r_idx, r in enumerate(t_data["matches"]):
+                            c1, c2, c3, c4, c5 = st.columns([3, 1, 3, 1, 1])
+                            r["l"] = c1.text_input(f"Vế trái {r_idx+1}", value=r.get("l", ""), key=f"m_l_{r_idx}")
+                            r["l_tts"] = c2.checkbox("Đọc", value=r.get("l_tts", False), key=f"m_l_tts_{r_idx}")
+                            r["r"] = c3.text_input(f"Vế phải {r_idx+1}", value=r.get("r", ""), key=f"m_r_{r_idx}")
+                            r["r_tts"] = c4.checkbox("Đọc", value=r.get("r_tts", False), key=f"m_r_tts_{r_idx}")
+                            if c5.button("❌", key=f"m_del_{r_idx}"):
+                                t_data["matches"].pop(r_idx)
+                                st.rerun()
+                        if st.button("➕ Thêm Cặp Nối"):
+                            t_data["matches"].append({"l":"", "r":"", "l_tts":False, "r_tts":False})
+                            st.rerun()
+                            
+                    elif t_data["q_type"] == "Điền từ (V3)":
+                        c1, c2 = st.columns(2)
+                        t_data["v3_tts"] = c1.checkbox("Đọc Audio (Toàn bộ)", value=t_data.get("v3_tts", False))
+                        t_data["v3_image"] = c2.text_input("Link Ảnh (G-Drive):", value=t_data.get("v3_image", ""))
+                        st.info("💡 MẸO: Đặt từ cần điền vào trong 2 dấu ngoặc vuông `[[ ]]` để tạo ô trống.\n\nVí dụ: The first month is `[[January, Jan]]`")
+                        t_data["v3_raw_text"] = st.text_area("Nội dung đoạn văn:", value=t_data.get("v3_raw_text", ""), height=200)
 
-                elif t_data["q_type"] == "Game: Sắp Xếp Từ":
-                    st.caption("Cú pháp: TỪ_VỰNG | Gợi ý (Mỗi từ 1 dòng)")
-                    t_data["g_scramble_raw"] = st.text_area("Dữ liệu:", value=t_data.get("g_scramble_raw", ""), height=200)
-                    
-                elif t_data["q_type"] == "Game: Tìm Từ Vựng":
-                    t_data["g_ws_grid"] = st.number_input("Kích thước lưới:", value=int(t_data.get("g_ws_grid", 15)))
-                    st.caption("Danh sách từ (Mỗi từ 1 dòng)")
-                    t_data["g_ws_raw"] = st.text_area("Từ vựng:", value=t_data.get("g_ws_raw", ""), height=200)
-                    
-                elif t_data["q_type"] == "Game: Ô Chữ":
-                    t_data["cross_timer"] = st.text_input("Thời gian (Giây, rỗng = ko tính):", value=t_data.get("cross_timer", ""))
-                    for r_idx, r in enumerate(t_data["cross_rows"]):
-                        c1, c2, c3 = st.columns([3, 5, 1])
-                        r["w"] = c1.text_input(f"Từ (Ko dấu cách)", value=r.get("w", ""), key=f"cw_w_{r_idx}")
-                        r["c"] = c2.text_input(f"Gợi ý {r_idx+1}", value=r.get("c", ""), key=f"cw_c_{r_idx}")
-                        if c3.button("❌", key=f"cw_del_{r_idx}"):
-                            t_data["cross_rows"].pop(r_idx)
-                            st.rerun()
-                    if st.button("➕ Thêm Từ Khóa"):
-                        t_data["cross_rows"].append({"w":"", "c":""})
-                        st.rerun()
+                    elif t_data["q_type"] == "Game: Sắp Xếp Từ":
+                        st.caption("Cú pháp: TỪ_VỰNG | Gợi ý (Mỗi từ 1 dòng)")
+                        t_data["g_scramble_raw"] = st.text_area("Dữ liệu:", value=t_data.get("g_scramble_raw", ""), height=200)
                         
-                elif t_data["q_type"] == "Game: Bức Tranh Bí Ẩn":
-                    t_data["hidden_bg"] = st.text_input("Link Ảnh Nền (Bức tranh giấu):", value=t_data.get("hidden_bg", ""))
-                    for r_idx, r in enumerate(t_data["hidden_imgs"]):
-                        c1, c2 = st.columns([8, 1])
-                        t_data["hidden_imgs"][r_idx] = c1.text_input(f"Ảnh ô cắt {r_idx+1}", value=r, key=f"hp_i_{r_idx}")
-                        if c2.button("❌", key=f"hp_del_{r_idx}"):
-                            t_data["hidden_imgs"].pop(r_idx)
-                            st.rerun()
-                    if st.button("➕ Thêm Ô Cắt"):
-                        t_data["hidden_imgs"].append("")
-                        st.rerun()
+                    elif t_data["q_type"] == "Game: Tìm Từ Vựng":
+                        t_data["g_ws_grid"] = st.number_input("Kích thước lưới:", value=int(t_data.get("g_ws_grid", 15)))
+                        st.caption("Danh sách từ (Mỗi từ 1 dòng)")
+                        t_data["g_ws_raw"] = st.text_area("Từ vựng:", value=t_data.get("g_ws_raw", ""), height=200)
                         
-                elif t_data["q_type"] == "Game: Lật Thẻ Nhớ":
-                    t_data["memory_timer"] = st.text_input("Thời gian (Giây):", value=t_data.get("memory_timer", "60"))
-                    for r_idx, r in enumerate(t_data["memory_pairs"]):
-                        c1, c2, c3 = st.columns([4, 4, 1])
-                        r["w"] = c1.text_input(f"Từ vựng {r_idx+1}", value=r.get("w", ""), key=f"mem_w_{r_idx}")
-                        r["img"] = c2.text_input(f"Link Ảnh {r_idx+1}", value=r.get("img", ""), key=f"mem_i_{r_idx}")
-                        if c3.button("❌", key=f"mem_del_{r_idx}"):
-                            t_data["memory_pairs"].pop(r_idx)
+                    elif t_data["q_type"] == "Game: Ô Chữ":
+                        t_data["cross_timer"] = st.text_input("Thời gian (Giây, rỗng = ko tính):", value=t_data.get("cross_timer", ""))
+                        for r_idx, r in enumerate(t_data["cross_rows"]):
+                            c1, c2, c3 = st.columns([3, 5, 1])
+                            r["w"] = c1.text_input(f"Từ (Ko dấu cách)", value=r.get("w", ""), key=f"cw_w_{r_idx}")
+                            r["c"] = c2.text_input(f"Gợi ý {r_idx+1}", value=r.get("c", ""), key=f"cw_c_{r_idx}")
+                            if c3.button("❌", key=f"cw_del_{r_idx}"):
+                                t_data["cross_rows"].pop(r_idx)
+                                st.rerun()
+                        if st.button("➕ Thêm Từ Khóa"):
+                            t_data["cross_rows"].append({"w":"", "c":""})
                             st.rerun()
-                    if st.button("➕ Thêm Cặp"):
-                        t_data["memory_pairs"].append({"w":"", "img":""})
-                        st.rerun()
-                        
-                st.markdown("---")
-                st.markdown("**Giải thích / Đáp án mẫu:**")
-                t_data["exp_raw"] = st.text_area("Nội dung giải thích (Hỗ trợ HTML):", value=t_data.get("exp_raw", ""))
-                t_data["exp_html"] = t_data["exp_raw"].replace('\n', '<br>')
+                            
+                    elif t_data["q_type"] == "Game: Bức Tranh Bí Ẩn":
+                        t_data["hidden_bg"] = st.text_input("Link Ảnh Nền (Bức tranh giấu):", value=t_data.get("hidden_bg", ""))
+                        for r_idx, r in enumerate(t_data["hidden_imgs"]):
+                            c1, c2 = st.columns([8, 1])
+                            t_data["hidden_imgs"][r_idx] = c1.text_input(f"Ảnh ô cắt {r_idx+1}", value=r, key=f"hp_i_{r_idx}")
+                            if c2.button("❌", key=f"hp_del_{r_idx}"):
+                                t_data["hidden_imgs"].pop(r_idx)
+                                st.rerun()
+                        if st.button("➕ Thêm Ô Cắt"):
+                            t_data["hidden_imgs"].append("")
+                            st.rerun()
+                            
+                    elif t_data["q_type"] == "Game: Lật Thẻ Nhớ":
+                        t_data["memory_timer"] = st.text_input("Thời gian (Giây):", value=t_data.get("memory_timer", "60"))
+                        for r_idx, r in enumerate(t_data["memory_pairs"]):
+                            c1, c2, c3 = st.columns([4, 4, 1])
+                            r["w"] = c1.text_input(f"Từ vựng {r_idx+1}", value=r.get("w", ""), key=f"mem_w_{r_idx}")
+                            r["img"] = c2.text_input(f"Link Ảnh {r_idx+1}", value=r.get("img", ""), key=f"mem_i_{r_idx}")
+                            if c3.button("❌", key=f"mem_del_{r_idx}"):
+                                t_data["memory_pairs"].pop(r_idx)
+                                st.rerun()
+                        if st.button("➕ Thêm Cặp"):
+                            t_data["memory_pairs"].append({"w":"", "img":""})
+                            st.rerun()
+                            
+            st.markdown("---")
+            st.markdown("#### 💡 Giải thích / Đáp án mẫu")
+            t_data["exp_raw"] = st.text_area("Nội dung giải thích (Hỗ trợ HTML):", value=t_data.get("exp_raw", ""))
+            t_data["exp_html"] = t_data["exp_raw"].replace('\n', '<br>')
             
             # Action Buttons
             col_btn1, col_btn2 = st.columns([2, 5])
@@ -1648,6 +1645,118 @@ def main():
                 navigate("Quiz", None)
                 
         else: # List view
+            # IMPORT TXT FEATURE KHÔI PHỤC VÀ HOÀN THIỆN CHO STREAMLIT
+            with st.expander("📄 Tải lên từ file TXT (Auto Parse)"):
+                uploaded_file = st.file_uploader("Chọn file TXT chứa danh sách câu hỏi", type=['txt'])
+                if uploaded_file is not None:
+                    if st.button("Xử lý và Nhập dữ liệu", type="primary"):
+                        content = uploaded_file.read().decode('utf-8')
+                        lines = content.split('\n')
+                        count = 0
+                        current_topic = ""
+                        current_q = None
+                        quizzes_to_add = []
+
+                        for line in lines:
+                            line = line.strip()
+                            if not line: continue
+                            
+                            topic_match = re.match(r'^Chủ đề[:\-]?\s*(.*)', line, re.IGNORECASE)
+                            if topic_match:
+                                current_topic = topic_match.group(1).strip()
+                                continue
+
+                            q_match = re.match(r'^(?:Câu|Question)\s*\d+[:\.\-]?\s*(.*)', line, re.IGNORECASE)
+                            if q_match:
+                                if current_q: quizzes_to_add.append(current_q)
+                                current_q = {"topic": current_topic, "q_text": q_match.group(1).strip(), "a": "", "b": "", "c": "", "d": "", "correct": "", "exp": "", "fills": []}
+                                continue
+
+                            if current_q:
+                                if re.match(r'^A[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["a"] = re.match(r'^A[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
+                                if re.match(r'^B[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["b"] = re.match(r'^B[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
+                                if re.match(r'^C[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["c"] = re.match(r'^C[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
+                                if re.match(r'^D[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["d"] = re.match(r'^D[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
+
+                                ans_match = re.match(r'^(?:Đáp án|Answer|Key)[:\-]?\s*(.*)', line, re.IGNORECASE)
+                                if ans_match: current_q["correct"] = ans_match.group(1).strip(); continue
+
+                                fill_match = re.match(r'^(?:Điền|Fill)[:\-]?\s*(.*)', line, re.IGNORECASE)
+                                if fill_match:
+                                    current_q["fills"] = [ans.strip() for ans in fill_match.group(1).split(',')]
+                                    continue
+
+                                exp_match = re.match(r'^(?:Giải thích|Explain|Explanation)[:\-]?\s*(.*)', line, re.IGNORECASE)
+                                if exp_match: current_q["exp"] = exp_match.group(1).strip(); continue
+
+                                if not current_q["a"] and not current_q["correct"] and not current_q["fills"]:
+                                    current_q["q_text"] += "\n" + line
+                                elif current_q["exp"]:
+                                    current_q["exp"] += "\n" + line
+
+                        if current_q: quizzes_to_add.append(current_q)
+
+                        for q in quizzes_to_add:
+                            is_mcq = any([q['a'], q['b'], q['c'], q['d']])
+                            if not is_mcq and (q['correct'] or q['fills'] or '___' in q['q_text']):
+                                q_type = "Điền từ (V3)"
+                            else:
+                                q_type = "Trắc nghiệm" if is_mcq else "Trắc nghiệm"
+                            
+                            correct_opt = "A"
+                            if is_mcq and q['correct']:
+                                match = re.search(r'([A-D])', q['correct'].upper())
+                                if match: correct_opt = match.group(1)
+
+                            new_quiz = {
+                                "topic": q["topic"],
+                                "q_raw": q["q_text"],
+                                "q_html": q["q_text"].replace('\n', '<br>'),
+                                "q_type": q_type,
+                                "q_tts": False,
+                                "mcq": {"a": q["a"], "b": q["b"], "c": q["c"], "d": q["d"], "correct": correct_opt},
+                                "mcq_tts": {"A": False, "B": False, "C": False, "D": False},
+                                "matches": [],
+                                "exp_raw": q["exp"],
+                                "exp_html": q["exp"].replace('\n', '<br>'),
+                                "v3_answers": [],
+                                "v3_tts": False,
+                                "v3_image": "",
+                            }
+
+                            if q_type == "Điền từ (V3)":
+                                answers = q.get("fills", [])
+                                if not answers and q["correct"]: answers = [q["correct"]]
+                                
+                                raw_text = q["q_text"]
+                                v3_answers = []
+                                for ans in answers:
+                                    if '___' in raw_text:
+                                        raw_text = raw_text.replace('___', f'[[{ans}]]', 1)
+                                    else:
+                                        raw_text += f" [[{ans}]]"
+                                    v3_answers.append([v.strip() for v in ans.split(',')])
+                                
+                                new_quiz["v3_raw_text"] = raw_text
+                                
+                                # Process for HTML
+                                q_html = raw_text
+                                def repl(m):
+                                    idx = len(repl.counter)
+                                    repl.counter.append(1)
+                                    return f"[[BLANK_{idx}]]"
+                                repl.counter = []
+                                q_html = re.sub(r'\[\[.*?\]\]', repl, q_html)
+                                new_quiz["v3_html_content"] = q_html.replace('\n', '<br>\n')
+                                new_quiz["v3_answers"] = v3_answers
+
+                            st.session_state.quiz_data.append(new_quiz)
+                            count += 1
+
+                        save_data()
+                        st.success(f"Đã tự động nhập {count} câu hỏi từ file TXT!")
+                        st.rerun()
+
             col1, col2 = st.columns([1, 1])
             if col1.button("➕ THÊM BÀI TẬP / TRÒ CHƠI", type="primary"):
                 navigate("Quiz", -1)
@@ -1657,9 +1766,9 @@ def main():
                 for i, data in enumerate(st.session_state.quiz_data):
                     title = data.get('topic') or data.get('q_raw', '')[:50]
                     if not title: title = "Câu hỏi " + data.get('q_type', '')
-                    with st.container():
+                    with st.container(border=True):
                         c1, c2, c3, c4 = st.columns([1, 6, 1, 1])
-                        if c1.checkbox("Chọn", key=f"quiz_chk_{i}"): to_delete.append(i)
+                        if c1.checkbox("Chọn xóa", key=f"quiz_chk_{i}"): to_delete.append(i)
                         c2.markdown(f"**Mục {i+1}: {title}**")
                         if c3.button("✏️ Sửa", key=f"quiz_edit_{i}"): navigate("Quiz", i)
                         if c4.button("📑 Nhân bản", key=f"quiz_clone_{i}"):
