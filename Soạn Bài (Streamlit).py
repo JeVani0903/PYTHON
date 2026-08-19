@@ -73,36 +73,7 @@ def parse_audio(txt, sys_id):
     txt, img, aud = parse_media(txt, sys_id)
     return txt, aud
 
-# =========================================================================
-# THUẬT TOÁN TẠO LƯỚI Ô CHỮ
-# =========================================================================
-def check_connectivity(words_data):
-    n = len(words_data)
-    adj = {i: [] for i in range(n)}
-    for i in range(n):
-        for j in range(i + 1, n):
-            if set(words_data[i]['word']).intersection(set(words_data[j]['word'])):
-                adj[i].append(j)
-                adj[j].append(i)
-    all_nodes = set(range(n))
-    components = []
-    while all_nodes:
-        start = all_nodes.pop()
-        comp = {start}
-        q = [start]
-        while q:
-            curr = q.pop(0)
-            for neighbor in adj[curr]:
-                if neighbor in all_nodes:
-                    all_nodes.remove(neighbor)
-                    comp.add(neighbor)
-                    q.append(neighbor)
-        components.append(comp)
-    if len(components) > 1:
-        components.sort(key=len)
-        return [words_data[i]['word'] for i in components[0]]
-    return []
-
+# Crossword Logic
 def is_valid_placement(word, x, y, direction, grid):
     for i, char in enumerate(word):
         cx = x + i if direction == 'across' else x
@@ -164,6 +135,33 @@ def generate_crossword_layout(original_word_list):
             return placed, "Success"
     return None, "Vẫn không thể xếp được lưới sau 1000 lần thử. Vui lòng đổi/thêm/bớt từ khóa!"
 
+def check_connectivity(words_data):
+    n = len(words_data)
+    adj = {i: [] for i in range(n)}
+    for i in range(n):
+        for j in range(i + 1, n):
+            if set(words_data[i]['word']).intersection(set(words_data[j]['word'])):
+                adj[i].append(j)
+                adj[j].append(i)
+    all_nodes = set(range(n))
+    components = []
+    while all_nodes:
+        start = all_nodes.pop()
+        comp = {start}
+        q = [start]
+        while q:
+            curr = q.pop(0)
+            for neighbor in adj[curr]:
+                if neighbor in all_nodes:
+                    all_nodes.remove(neighbor)
+                    comp.add(neighbor)
+                    q.append(neighbor)
+        components.append(comp)
+    if len(components) > 1:
+        components.sort(key=len)
+        return [words_data[i]['word'] for i in components[0]]
+    return []
+
 # =========================================================================
 # QUẢN LÝ DỮ LIỆU
 # =========================================================================
@@ -195,10 +193,10 @@ def init_session():
         st.session_state.lecture_data = data.get("lecture_data", [])
         st.session_state.quiz_data = data.get("quiz_data", [])
         st.session_state.current_page = "Quiz"
-        st.session_state.edit_idx = -1
+        st.session_state.edit_idx = None # FIX: Mặc định là None (Hiển thị Danh sách)
         st.session_state.initialized = True
 
-def navigate(page, edit_idx=-1):
+def navigate(page, edit_idx=None):
     st.session_state.current_page = page
     st.session_state.edit_idx = edit_idx
     st.rerun()
@@ -266,7 +264,7 @@ def generate_code_block():
             a_url = optimize_url(blk.get('link', ''))
             if a_url: lec_html_parts.append(f'<div class="lecture-section"><h3 class="section-title">🎧 {title}</h3><div class="standalone-audio"><audio controls><source src="{a_url}" type="audio/mpeg"></audio></div></div>')
 
-    # QUIZ Processing
+    # 2. QUIZ
     quiz_html_parts, js_grading_parts, js_init_parts = [], [], []
     max_score = 0
     valid_quizzes = st.session_state.quiz_data
@@ -316,9 +314,12 @@ def generate_code_block():
                     b64_tts = base64.b64encode(tts_text.encode('utf-8')).decode('utf-8')
                     audio_btn = f'<button type="button" class="audio-icon-btn" onclick="speakTTSBase64_{sys_id}(\'{b64_tts}\')" style="margin: 0 0 0 10px; flex-shrink: 0; width: 35px; height: 35px; font-size: 16px;">🔊</button>'
                     display_txt = "" 
+                
                 if not display_txt and not opt_img_html and audio_btn:
                     display_txt = f"Đáp án {val}"
+                    
                 inner_content = f"{opt_img_html}<span class='opt-text' style='margin-left: 5px;'>{display_txt}</span>" if display_txt else opt_img_html
+                    
                 labels.append(f'<div style="display: flex; align-items: center; margin-bottom: 8px;">'
                               f'<label class="opt-label hover-yellow" id="label-q{idx}-{val}_{sys_id}" style="flex-grow: 1; margin: 0; display:flex; align-items:center;">'
                               f'<input type="radio" name="q{idx}_{sys_id}" value="{val}" style="margin-right:8px;"> '
@@ -413,9 +414,14 @@ def generate_code_block():
             </div>
             <script>
               const wb_{sys_id}_{idx} = {json_wb}; let up_{sys_id}_{idx}=[], curr_{sys_id}_{idx}=null, s_{sys_id}_{idx}=0, q_{sys_id}_{idx}=1;
-              document.getElementById("scramble-guess-{sys_id}-{idx}").addEventListener("keydown", function(e) {{ if (e.key === "Enter") {{ e.preventDefault(); e.stopPropagation(); checkScramble_{sys_id}_{idx}(); }} }});
+              
+              document.getElementById("scramble-guess-{sys_id}-{idx}").addEventListener("keydown", function(e) {{
+                  if (e.key === "Enter") {{ e.preventDefault(); e.stopPropagation(); checkScramble_{sys_id}_{idx}(); }}
+              }});
+
               function shuf_{sys_id}_{idx}(w) {{ let a=w.split(''); for(let i=a.length-1;i>0;i--) {{let j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];}} return a.join(''); }}
               function startScramble_{sys_id}_{idx}() {{ up_{sys_id}_{idx}=[...wb_{sys_id}_{idx}]; s_{sys_id}_{idx}=0; q_{sys_id}_{idx}=1; document.getElementById("scramble-score-{sys_id}-{idx}").innerText=s_{sys_id}_{idx}; document.getElementById("scramble-play-{sys_id}-{idx}").style.display="block"; document.getElementById("scramble-result-{sys_id}-{idx}").style.display="none"; nextScramble_{sys_id}_{idx}(); }}
+              
               function nextScramble_{sys_id}_{idx}() {{
                 if(up_{sys_id}_{idx}.length===0){{ return; }}
                 document.getElementById("scramble-count-{sys_id}-{idx}").innerText=q_{sys_id}_{idx}+"/"+wb_{sys_id}_{idx}.length;
@@ -424,6 +430,7 @@ def generate_code_block():
                 document.getElementById("scramble-hint-{sys_id}-{idx}").innerText="Gợi ý: "+curr_{sys_id}_{idx}.hint;
                 let inp = document.getElementById("scramble-guess-{sys_id}-{idx}"); inp.value=""; inp.disabled=false; inp.focus(); document.getElementById("scramble-msg-{sys_id}-{idx}").innerText="";
               }}
+
               function checkScramble_{sys_id}_{idx}() {{
                 let inp = document.getElementById("scramble-guess-{sys_id}-{idx}");
                 let v = inp.value.toUpperCase().trim(); let m = document.getElementById("scramble-msg-{sys_id}-{idx}");
@@ -613,6 +620,7 @@ def generate_code_block():
                     return document.getElementById('cw-board-container-{sys_id}-{idx}').querySelector(`input[data-x="${{nx}}"][data-y="${{ny}}"]`);
                 }};
                 
+                // Logic tự động tìm từ tiếp theo (Ưu tiên Ngang -> Dọc)
                 window.cwFocusNextClue_{sys_id}_{idx} = function() {{
                     let allInputs = document.getElementById('cw-board-container-{sys_id}-{idx}').querySelectorAll('.cw-input');
                     let allCorrect = true;
@@ -1252,10 +1260,8 @@ def generate_code_block():
 def main():
     st.set_page_config(page_title="Super App - V3 Ultimate Quiz & Game", layout="wide")
     
-    # 1. Khởi tạo State (Thay thế cho CoreManager)
     init_session()
     
-    # Custom CSS
     st.markdown("""
     <style>
         .stButton>button { border-radius: 8px; font-weight: bold; width: 100%; }
@@ -1265,15 +1271,18 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    # 2. Sidebar Navigation
     st.sidebar.markdown("## 📱 MENU CHÍNH")
     page = st.sidebar.radio("Điều hướng", ["⚙️ Cấu Hình Chung", "📚 Bài Giảng", "📝 Bài Tập & Trò Chơi"], 
                             index=["Config", "Lecture", "Quiz"].index(st.session_state.current_page) if st.session_state.current_page in ["Config", "Lecture", "Quiz"] else 0)
     
-    # Map label to internal page name
-    if page == "⚙️ Cấu Hình Chung": st.session_state.current_page = "Config"
-    elif page == "📚 Bài Giảng": st.session_state.current_page = "Lecture"
-    elif page == "📝 Bài Tập & Trò Chơi": st.session_state.current_page = "Quiz"
+    target_page = "Config"
+    if page == "📚 Bài Giảng": target_page = "Lecture"
+    elif page == "📝 Bài Tập & Trò Chơi": target_page = "Quiz"
+    
+    if st.session_state.current_page != target_page:
+        st.session_state.current_page = target_page
+        st.session_state.edit_idx = None
+        st.rerun()
     
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📤 ĐIỀU KHIỂN XUẤT MÃ")
@@ -1290,7 +1299,6 @@ def main():
         st.session_state.show_code = True
         st.rerun()
 
-    # Xử lý hiển thị Code sau khi xuất
     if st.session_state.get('show_code', False) and 'generated_code' in st.session_state:
         st.sidebar.success("Tạo mã thành công!")
         st.sidebar.download_button("💾 TẢI FILE CODE (.txt)", data=st.session_state.generated_code, file_name="blog_code.txt", mime="text/plain", use_container_width=True)
@@ -1300,7 +1308,6 @@ def main():
             st.session_state.show_code = False
             st.rerun()
 
-    # 3. Render Pages
     if st.session_state.current_page == "Config":
         st.header("⚙️ CẤU HÌNH BÀI VIẾT (Áp dụng chung)")
         with st.container(border=True):
@@ -1318,12 +1325,10 @@ def main():
     elif st.session_state.current_page == "Lecture":
         st.header("📚 Quản lý Bài Giảng")
         
-        # Nếu đang ở chế độ chỉnh sửa/thêm mới
-        if st.session_state.edit_idx is not None and st.session_state.edit_idx >= -1:
+        if st.session_state.edit_idx is not None:
             is_new = (st.session_state.edit_idx == -1)
             idx = st.session_state.edit_idx
             
-            # Khởi tạo temp data nếu chưa có
             if 'temp_lec' not in st.session_state:
                 if is_new:
                     st.session_state.temp_lec = {
@@ -1395,7 +1400,7 @@ def main():
                 del st.session_state.temp_lec
                 navigate("Lecture", None)
                 
-        else: # Hiển thị danh sách
+        else:
             if st.button("➕ THÊM BÀI GIẢNG MỚI", type="primary"):
                 navigate("Lecture", -1)
                 
@@ -1425,7 +1430,7 @@ def main():
     elif st.session_state.current_page == "Quiz":
         st.header("📝 Quản lý Bài Tập & Trò Chơi")
         
-        if st.session_state.edit_idx is not None and st.session_state.edit_idx >= -1:
+        if st.session_state.edit_idx is not None:
             is_new = (st.session_state.edit_idx == -1)
             idx = st.session_state.edit_idx
             
@@ -1463,7 +1468,6 @@ def main():
                                                 index=["Trắc nghiệm", "Điền từ (V3)", "Nối câu", "Game: Sắp Xếp Từ", "Game: Tìm Từ Vựng", "Game: Ô Chữ", "Game: Bức Tranh Bí Ẩn", "Game: Lật Thẻ Nhớ"].index(t_data.get("q_type", "Trắc nghiệm")))
                 t_data["topic"] = c2.text_input("📌 Nhập chủ đề chung (Tùy chọn):", value=t_data.get("topic", ""))
 
-            # Layout 2 cột
             col_l, col_r = st.columns([1, 1])
             
             with col_l:
@@ -1564,10 +1568,8 @@ def main():
             t_data["exp_raw"] = st.text_area("Nội dung giải thích (Hỗ trợ HTML):", value=t_data.get("exp_raw", ""))
             t_data["exp_html"] = t_data["exp_raw"].replace('\n', '<br>')
             
-            # Action Buttons
             col_btn1, col_btn2 = st.columns([2, 5])
             if col_btn1.button("✔ LƯU BÀI TẬP", type="primary"):
-                # Processing logic before saving
                 if t_data["q_type"] == "Điền từ (V3)":
                     text = t_data.get("v3_raw_text", "")
                     blanks = re.findall(r'\[\[(.*?)\]\]', text)
@@ -1644,122 +1646,123 @@ def main():
                 del st.session_state.temp_quiz
                 navigate("Quiz", None)
                 
-        else: # List view
-            # IMPORT TXT FEATURE KHÔI PHỤC VÀ HOÀN THIỆN CHO STREAMLIT
-            with st.expander("📄 Tải lên từ file TXT (Auto Parse)"):
-                uploaded_file = st.file_uploader("Chọn file TXT chứa danh sách câu hỏi", type=['txt'])
-                if uploaded_file is not None:
-                    if st.button("Xử lý và Nhập dữ liệu", type="primary"):
-                        content = uploaded_file.read().decode('utf-8')
-                        lines = content.split('\n')
-                        count = 0
-                        current_topic = ""
-                        current_q = None
-                        quizzes_to_add = []
+        else:
+            st.markdown("### 📋 Danh sách Bài Tập & Trò Chơi")
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("➕ THÊM BÀI TẬP / TRÒ CHƠI", type="primary", use_container_width=True):
+                    navigate("Quiz", -1)
+            with col2:
+                with st.expander("📄 NHẬP NHANH TỪ FILE .TXT", expanded=False):
+                    uploaded_file = st.file_uploader("Chọn file TXT", type=['txt'])
+                    if uploaded_file is not None:
+                        if st.button("Xử lý & Nhập dữ liệu", type="primary"):
+                            content = uploaded_file.read().decode('utf-8')
+                            lines = content.split('\n')
+                            count = 0
+                            current_topic = ""
+                            current_q = None
+                            quizzes_to_add = []
 
-                        for line in lines:
-                            line = line.strip()
-                            if not line: continue
-                            
-                            topic_match = re.match(r'^Chủ đề[:\-]?\s*(.*)', line, re.IGNORECASE)
-                            if topic_match:
-                                current_topic = topic_match.group(1).strip()
-                                continue
-
-                            q_match = re.match(r'^(?:Câu|Question)\s*\d+[:\.\-]?\s*(.*)', line, re.IGNORECASE)
-                            if q_match:
-                                if current_q: quizzes_to_add.append(current_q)
-                                current_q = {"topic": current_topic, "q_text": q_match.group(1).strip(), "a": "", "b": "", "c": "", "d": "", "correct": "", "exp": "", "fills": []}
-                                continue
-
-                            if current_q:
-                                if re.match(r'^A[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["a"] = re.match(r'^A[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
-                                if re.match(r'^B[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["b"] = re.match(r'^B[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
-                                if re.match(r'^C[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["c"] = re.match(r'^C[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
-                                if re.match(r'^D[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["d"] = re.match(r'^D[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
-
-                                ans_match = re.match(r'^(?:Đáp án|Answer|Key)[:\-]?\s*(.*)', line, re.IGNORECASE)
-                                if ans_match: current_q["correct"] = ans_match.group(1).strip(); continue
-
-                                fill_match = re.match(r'^(?:Điền|Fill)[:\-]?\s*(.*)', line, re.IGNORECASE)
-                                if fill_match:
-                                    current_q["fills"] = [ans.strip() for ans in fill_match.group(1).split(',')]
+                            for line in lines:
+                                line = line.strip()
+                                if not line: continue
+                                
+                                topic_match = re.match(r'^Chủ đề[:\-]?\s*(.*)', line, re.IGNORECASE)
+                                if topic_match:
+                                    current_topic = topic_match.group(1).strip()
                                     continue
 
-                                exp_match = re.match(r'^(?:Giải thích|Explain|Explanation)[:\-]?\s*(.*)', line, re.IGNORECASE)
-                                if exp_match: current_q["exp"] = exp_match.group(1).strip(); continue
+                                q_match = re.match(r'^(?:Câu|Question)\s*\d+[:\.\-]?\s*(.*)', line, re.IGNORECASE)
+                                if q_match:
+                                    if current_q: quizzes_to_add.append(current_q)
+                                    current_q = {"topic": current_topic, "q_text": q_match.group(1).strip(), "a": "", "b": "", "c": "", "d": "", "correct": "", "exp": "", "fills": []}
+                                    continue
 
-                                if not current_q["a"] and not current_q["correct"] and not current_q["fills"]:
-                                    current_q["q_text"] += "\n" + line
-                                elif current_q["exp"]:
-                                    current_q["exp"] += "\n" + line
+                                if current_q:
+                                    if re.match(r'^A[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["a"] = re.match(r'^A[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
+                                    if re.match(r'^B[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["b"] = re.match(r'^B[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
+                                    if re.match(r'^C[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["c"] = re.match(r'^C[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
+                                    if re.match(r'^D[\.\)]\s*(.*)', line, re.IGNORECASE): current_q["d"] = re.match(r'^D[\.\)]\s*(.*)', line, re.IGNORECASE).group(1).strip(); continue
 
-                        if current_q: quizzes_to_add.append(current_q)
+                                    ans_match = re.match(r'^(?:Đáp án|Answer|Key)[:\-]?\s*(.*)', line, re.IGNORECASE)
+                                    if ans_match: current_q["correct"] = ans_match.group(1).strip(); continue
 
-                        for q in quizzes_to_add:
-                            is_mcq = any([q['a'], q['b'], q['c'], q['d']])
-                            if not is_mcq and (q['correct'] or q['fills'] or '___' in q['q_text']):
-                                q_type = "Điền từ (V3)"
-                            else:
-                                q_type = "Trắc nghiệm" if is_mcq else "Trắc nghiệm"
-                            
-                            correct_opt = "A"
-                            if is_mcq and q['correct']:
-                                match = re.search(r'([A-D])', q['correct'].upper())
-                                if match: correct_opt = match.group(1)
+                                    fill_match = re.match(r'^(?:Điền|Fill)[:\-]?\s*(.*)', line, re.IGNORECASE)
+                                    if fill_match:
+                                        current_q["fills"] = [ans.strip() for ans in fill_match.group(1).split(',')]
+                                        continue
 
-                            new_quiz = {
-                                "topic": q["topic"],
-                                "q_raw": q["q_text"],
-                                "q_html": q["q_text"].replace('\n', '<br>'),
-                                "q_type": q_type,
-                                "q_tts": False,
-                                "mcq": {"a": q["a"], "b": q["b"], "c": q["c"], "d": q["d"], "correct": correct_opt},
-                                "mcq_tts": {"A": False, "B": False, "C": False, "D": False},
-                                "matches": [],
-                                "exp_raw": q["exp"],
-                                "exp_html": q["exp"].replace('\n', '<br>'),
-                                "v3_answers": [],
-                                "v3_tts": False,
-                                "v3_image": "",
-                            }
+                                    exp_match = re.match(r'^(?:Giải thích|Explain|Explanation)[:\-]?\s*(.*)', line, re.IGNORECASE)
+                                    if exp_match: current_q["exp"] = exp_match.group(1).strip(); continue
 
-                            if q_type == "Điền từ (V3)":
-                                answers = q.get("fills", [])
-                                if not answers and q["correct"]: answers = [q["correct"]]
+                                    if not current_q["a"] and not current_q["correct"] and not current_q["fills"]:
+                                        current_q["q_text"] += "\n" + line
+                                    elif current_q["exp"]:
+                                        current_q["exp"] += "\n" + line
+
+                            if current_q: quizzes_to_add.append(current_q)
+
+                            for q in quizzes_to_add:
+                                is_mcq = any([q['a'], q['b'], q['c'], q['d']])
+                                if not is_mcq and (q['correct'] or q['fills'] or '___' in q['q_text']):
+                                    q_type = "Điền từ (V3)"
+                                else:
+                                    q_type = "Trắc nghiệm" if is_mcq else "Trắc nghiệm"
                                 
-                                raw_text = q["q_text"]
-                                v3_answers = []
-                                for ans in answers:
-                                    if '___' in raw_text:
-                                        raw_text = raw_text.replace('___', f'[[{ans}]]', 1)
-                                    else:
-                                        raw_text += f" [[{ans}]]"
-                                    v3_answers.append([v.strip() for v in ans.split(',')])
-                                
-                                new_quiz["v3_raw_text"] = raw_text
-                                
-                                # Process for HTML
-                                q_html = raw_text
-                                def repl(m):
-                                    idx = len(repl.counter)
-                                    repl.counter.append(1)
-                                    return f"[[BLANK_{idx}]]"
-                                repl.counter = []
-                                q_html = re.sub(r'\[\[.*?\]\]', repl, q_html)
-                                new_quiz["v3_html_content"] = q_html.replace('\n', '<br>\n')
-                                new_quiz["v3_answers"] = v3_answers
+                                correct_opt = "A"
+                                if is_mcq and q['correct']:
+                                    match = re.search(r'([A-D])', q['correct'].upper())
+                                    if match: correct_opt = match.group(1)
 
-                            st.session_state.quiz_data.append(new_quiz)
-                            count += 1
+                                new_quiz = {
+                                    "topic": q["topic"],
+                                    "q_raw": q["q_text"],
+                                    "q_html": q["q_text"].replace('\n', '<br>'),
+                                    "q_type": q_type,
+                                    "q_tts": False,
+                                    "mcq": {"a": q["a"], "b": q["b"], "c": q["c"], "d": q["d"], "correct": correct_opt},
+                                    "mcq_tts": {"A": False, "B": False, "C": False, "D": False},
+                                    "matches": [],
+                                    "exp_raw": q["exp"],
+                                    "exp_html": q["exp"].replace('\n', '<br>'),
+                                    "v3_answers": [],
+                                    "v3_tts": False,
+                                    "v3_image": "",
+                                }
 
-                        save_data()
-                        st.success(f"Đã tự động nhập {count} câu hỏi từ file TXT!")
-                        st.rerun()
+                                if q_type == "Điền từ (V3)":
+                                    answers = q.get("fills", [])
+                                    if not answers and q["correct"]: answers = [q["correct"]]
+                                    
+                                    raw_text = q["q_text"]
+                                    v3_answers = []
+                                    for ans in answers:
+                                        if '___' in raw_text:
+                                            raw_text = raw_text.replace('___', f'[[{ans}]]', 1)
+                                        else:
+                                            raw_text += f" [[{ans}]]"
+                                        v3_answers.append([v.strip() for v in ans.split(',')])
+                                    
+                                    new_quiz["v3_raw_text"] = raw_text
+                                    
+                                    q_html = raw_text
+                                    def repl(m):
+                                        idx = len(repl.counter)
+                                        repl.counter.append(1)
+                                        return f"[[BLANK_{idx}]]"
+                                    repl.counter = []
+                                    q_html = re.sub(r'\[\[.*?\]\]', repl, q_html)
+                                    new_quiz["v3_html_content"] = q_html.replace('\n', '<br>\n')
+                                    new_quiz["v3_answers"] = v3_answers
 
-            col1, col2 = st.columns([1, 1])
-            if col1.button("➕ THÊM BÀI TẬP / TRÒ CHƠI", type="primary"):
-                navigate("Quiz", -1)
+                                st.session_state.quiz_data.append(new_quiz)
+                                count += 1
+
+                            save_data()
+                            st.success(f"Đã tự động nhập {count} câu hỏi từ file TXT!")
+                            st.rerun()
                 
             if len(st.session_state.quiz_data) > 0:
                 to_delete = []
@@ -1783,7 +1786,7 @@ def main():
                         save_data()
                         st.rerun()
             else:
-                st.info("Chưa có bài tập nào.")
+                st.info("Chưa có bài tập nào. Nhấn nút Thêm hoặc Tải lên từ file TXT.")
 
 if __name__ == "__main__":
     main()
